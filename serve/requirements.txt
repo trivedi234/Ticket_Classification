@@ -1,5 +1,6 @@
 pandas
 numpy
+re
 nltk
-beautifulsoup4
-html5lib
+sklearn
+

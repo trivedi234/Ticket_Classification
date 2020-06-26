@@ -10,6 +10,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.utils.data
+from sklearn.decomposition import PCA
 
 from model import FFClassifier
 
@@ -63,7 +64,7 @@ def predict_fn(input_data, model):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     
     if model.transformers is None:
-        raise Exception('Model has not been loaded properly, no word_dict.')
+        raise Exception('Model has not been loaded properly, transformers.')
     
     # Process input_data so that it is ready to be sent to our model.
 
@@ -71,21 +72,22 @@ def predict_fn(input_data, model):
     lemmatizer = model.transformers["lemmatizer"]
     le = model.transformers["encoder"]
     vectorizer = model.transformers["vectorizer"]
+    pca = model.transformers["pca"]
     
     data_X = word_processor(input_data)
-    data_X = vectorizer.transform(data_x)
+    data_X = vectorizer.transform(data_X)
+    data_X = pca.transform(data_X_
     data_X = data_X.reshape(1, -1)
     
-    data = torch.from_numpy(data_X)
+    data = torch.from_numpy(data_X).squeeze()
     data = data.to(device)
 
-    # Make sure to put the model into evaluation mode
+    # put the model into evaluation mode for prediction
     model.eval()
 
-    # TODO: Compute the result of applying the model to the input data. The variable `result` should
-    #       be a numpy array which contains a single integer which is either 1 or 0
+    # output is returned in the form of string of the predicted category
 
-    result = model(data).numpy()
+    result = np.argmax(model(data).numpy())
     result = str(le.inverse_transform(result)[0])                            
     
     return result

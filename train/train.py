@@ -25,7 +25,7 @@ def model_fn(model_dir):
 
     # Determine the device and construct the model.
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = FFlassifier(model_info['input_dim'], model_info['hidden_dim1'], model_info['hidden_dim2'])
+    model = FFlassifier(model_info['input_dim'], model_info['hidden_dim1'], model_info['hidden_dim2'], model_info["output_dim"])
 
     # Load the stored model parameters.
     model_path = os.path.join(model_dir, 'model.pth')
@@ -33,7 +33,7 @@ def model_fn(model_dir):
         model.load_state_dict(torch.load(f))
 
     # Load the saved transformers.
-    transformer_path = os.path.join(model_dir, 'transformers.pkl')
+    transformer_path = os.path.join(model_dir, 'transformer.pkl')
     with open(transformer_path, 'rb') as f:
         model.transformers = pickle.load(f)
 
@@ -42,15 +42,16 @@ def model_fn(model_dir):
     print("Done loading model.")
     return model
 
-def _get_train_data_loader(batch_size, training_dir, file_name):
+def _get_train_data_loader(batch_size, training_dir, file_train, file_test):
     print("Get train data loader.")
 
-    train_data = pd.read_csv(os.path.join(training_dir, file_name), header=None, names=None)
+    train_data = pd.read_csv(os.path.join(training_dir, file_train), header=None, names=None)
+    test_data = pd.read_csv(os.path.join(training_dir, file_test), header=None, names=None)
 
-    train_sample_y = torch.from_numpy(train_sample[[-1]].values).float().squeeze()
-    train_sample_X = torch.from_numpy(train_sample.drop([-1], axis=1).values).long()
+    test_y = torch.from_numpy(test_data.iloc[:,-1].values).long().squeeze()
+    train_X = torch.from_numpy(train_data.iloc[:,0:-1].values).float()
 
-    train_ds = torch.utils.data.TensorDataset(train_X, train_y)
+    train_ds = torch.utils.data.TensorDataset(train_X, test_y)
 
     return torch.utils.data.DataLoader(train_ds, batch_size=batch_size)
 
@@ -67,7 +68,6 @@ def train(model, train_loader, epochs, optimizer, loss_fn, device):
     device       - Where the model and data should be loaded (gpu or cpu).
     """
     
-    # TODO: Paste the train() method developed in the notebook here.
 
     for epoch in range(1, epochs + 1):
         model.train()
@@ -87,12 +87,12 @@ def train(model, train_loader, epochs, optimizer, loss_fn, device):
             loss.backward()
             optimizer.step()
             total_loss += loss.data.item()
-        print("Epoch: {}, BCELoss: {}".format(epoch, total_loss / len(train_loader)))
+        print("Epoch: {}, NLLLoss: {}".format(epoch, total_loss / len(train_loader)))
 
 
 if __name__ == '__main__':
     # All of the model parameters and training parameters are sent as arguments when the script
-    # is executed. Here we set up an argument parser to easily access the parameters.
+    # is executed.
 
     parser = argparse.ArgumentParser()
 
@@ -103,15 +103,19 @@ if __name__ == '__main__':
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--train_set', type=int, default="train1.csv", metavar='S',
+    parser.add_argument('--train_set', type=str, default="train1.csv", metavar='S',
                         help='filename for the training_set')
+    parser.add_argument('--test_set', type=str, default="test1.csv", metavar='S',
+                        help='filename for the test_set')
 
     # Model Parameters
-    parser.add_argument('--input_dim', type=int, default=4080, metavar='N',
+    parser.add_argument('--input_dim', type=int, default=100, metavar='N',
                         help='size of the input features (default: 4080)')
     parser.add_argument('--hidden_dim1', type=int, default=128, metavar='N',
                         help='size of the first hidden dimension (default: 128)')
     parser.add_argument('--hidden_dim2', type=int, default=64, metavar='N',
+                        help='size of the second hidden dimension (default: 64)')
+    parser.add_argument('--output_dim', type=int, default=8, metavar='N',
                         help='size of the second hidden dimension (default: 64)')
 
     # SageMaker Parameters
@@ -129,16 +133,16 @@ if __name__ == '__main__':
     torch.manual_seed(args.seed)
 
     # Load the training data.
-    train_loader = _get_train_data_loader(args.batch_size, args.data_dir, args.train_set)
+    train_loader = _get_train_data_loader(args.batch_size, args.data_dir, args.train_set, arg.test_set)
 
     # Build the model.
-    model = FFClassifier(args.input_dim, args.hidden_dim1, args.hidden_dim2).to(device)
+    model = FFClassifier(args.input_dim, args.hidden_dim1, args.hidden_dim2, args.output_dim).to(device)
 
-    with open(os.path.join(args.data_dir, "transformers.pkl"), "rb") as f:
+    with open(os.path.join(args.data_dir, "transformer.pkl"), "rb") as f:
         model.transformers = pickle.load(f)
 
-    print("Model loaded with input_dim {}, hidden_dim1 {}, hidden_dim2 {}.".format(
-        args.input_dim, args.hidden_dim1, args.hidden_dim2
+    print("Model loaded with input_dim {}, hidden_dim1 {}, hidden_dim2 {}, output_dim".format(
+        args.input_dim, args.hidden_dim1, args.hidden_dim2, args.output_dim
     ))
 
     # Train the model.
@@ -154,11 +158,12 @@ if __name__ == '__main__':
             'input_dim': args.input_dim,
             'hidden_dim1': args.hidden_dim1,
             'hidden_dim2': args.hidden_dim2,
+            "output_dim" : args.output_dim
         }
         torch.save(model_info, f)
 
 	# Save the transformers
-    transformer_path = os.path.join(args.model_dir, 'transformers.pkl')
+    transformer_path = os.path.join(args.model_dir, 'transformer.pkl')
     with open(transformer_path, 'wb') as f:
         pickle.dump(model.transformers, f)
 
